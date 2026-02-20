@@ -319,6 +319,12 @@ export default function Transactions() {
               <DialogTitle>
                 {editingTransaction ? t("editTransaction") : t("addTransaction")}
               </DialogTitle>
+              {/* Added Description for Accessibility */}
+              <p className="text-sm text-muted-foreground">
+                {isArabic
+                  ? "أدخل تفاصيل المعاملة المالية أدناه."
+                  : "Enter transaction details below."}
+              </p>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -482,16 +488,43 @@ export default function Transactions() {
                   {/* المرفقات */}
                   <TableCell>
                     {tx.attachment_path ? (
-                      <button
+                      <Button
+                        variant="ghost"
+                        className="h-8 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                         onClick={async () => {
                           try {
-                            const response = await fetch(tx.attachment_path);
-                            if (!response.ok) throw new Error("Download failed");
+                            // 1. Get Public URL (It's always available for public buckets)
+                            const { data } = supabase.storage
+                              .from("transaction_attachments")
+                              .getPublicUrl(tx.attachment_path.split('/').pop()); // attachment_path might be full URL or path. 
+                            // The stored path in DB:
+                            // "attachment_path": "https://..." (from handleFileUpload)
+                            // Wait, handleFileUpload stores `data.publicUrl`.
+                            // So `tx.attachment_path` IS the URL.
 
-                            const filename = decodeURIComponent(
-                              tx.attachment_path.split("/").pop() || "file"
-                            );
+                            // If it's a URL, we can fetch it directly.
+                            const fileUrl = tx.attachment_path;
+
+                            const response = await fetch(fileUrl);
+                            if (!response.ok) {
+                              if (response.status === 404) {
+                                toast.error(isArabic ? "المرفق غير موجود" : "File not found");
+                                return;
+                              }
+                              throw new Error("Download failed");
+                            }
+
                             const blob = await response.blob();
+
+                            // Construct Filename: ${description}_${YYYY-MM-DD_HH-mm}.${ext}
+                            const ext = fileUrl.split('.').pop() || 'dat';
+                            const dateStr = format(new Date(), "yyyy-MM-dd_HH-mm");
+                            const safeDesc = (tx.description || tx.invoice_number || "transaction")
+                              .replace(/[^a-z0-9\u0600-\u06FF_-]/gi, '_') // Keep Arabic & English
+                              .substring(0, 50);
+
+                            const filename = `${safeDesc}_${dateStr}.${ext}`;
+
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement("a");
                             a.href = url;
@@ -501,25 +534,20 @@ export default function Transactions() {
                             document.body.removeChild(a);
                             window.URL.revokeObjectURL(url);
 
-                            toast.success("تم تنزيل الملف بنجاح ✅", {
-                              duration: 2500,
-                              position: "top-center",
-                            });
+                            toast.success(isArabic ? "تم التحميل بنجاح" : "Downloaded successfully");
                           } catch (err) {
                             console.error(err);
-                            toast.error("حدث خطأ أثناء تنزيل الملف ❌", {
-                              duration: 2500,
-                              position: "top-center",
-                            });
+                            toast.error(isArabic ? "فشل التحميل" : "Download failed");
                           }
                         }}
-                        className="text-blue-500 hover:underline flex items-center gap-1"
                       >
-                        <FileText className="h-4 w-4" />{" "}
-                        {t("viewFile") || "عرض الملف"}
-                      </button>
+                        <FileText className="h-4 w-4 mr-1" />
+                        {isArabic ? "تحميل" : "Download"}
+                      </Button>
                     ) : (
-                      "-"
+                      <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                        {isArabic ? "لا توجد ملفات" : "No files"}
+                      </span>
                     )}
                   </TableCell>
 

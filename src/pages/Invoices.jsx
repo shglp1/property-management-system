@@ -19,6 +19,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
   DialogFooter
 } from '@/components/ui/dialog'
@@ -323,20 +324,39 @@ export default function Invoices() {
 
   const downloadInvoice = async (filePath, fileName) => {
     try {
-      const { data, error } = await supabase.storage
+      // Invoices store relative path, so get public URL first
+      const { data } = supabase.storage
         .from('invoices')
-        .download(filePath)
+        .getPublicUrl(filePath)
 
-      if (error) throw error
+      const fileUrl = data.publicUrl
 
-      const url = URL.createObjectURL(data)
+      const response = await fetch(fileUrl)
+      if (!response.ok) {
+        if (response.status === 404) {
+          alert(isRTL ? "المرفق غير موجود" : "File not found")
+          return
+        }
+        throw new Error("Download failed")
+      }
+
+      const blob = await response.blob()
+
+      // Construct Filename: ${description}_${YYYY-MM-DD_HH-mm}.${ext}
+      // We don't have description here easily unless we pass it, but fileName usually has it or we use standard format.
+      // The function signature is (filePath, fileName). `fileName` comes from the invoice object (e.g. "timestamp_name.pdf").
+      // We can try to make it prettier if possible, or just use the stored name but ensure extension.
+      // Let's use the stored `fileName` but ensure it's safe.
+      const safeName = fileName || 'invoice_file'
+
+      const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = fileName
+      a.download = safeName
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      window.URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Error downloading invoice:', error)
       alert(`Failed to download invoice: ${error.message}`)
@@ -438,6 +458,9 @@ export default function Invoices() {
                     ? t('editInvoice') || 'تعديل فاتورة'
                     : t('addInvoice') || 'إضافة فاتورة'}
                 </DialogTitle>
+                <DialogDescription>
+                  {isRTL ? "أدخل تفاصيل الفاتورة أدناه." : "Enter invoice details below."}
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">

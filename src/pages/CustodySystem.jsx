@@ -80,7 +80,7 @@ export default function CustodySystem() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const { user, signOut } = useAuth();
-    const isRTL = i18n.language === 'ar';
+    const isRTL = i18n.language?.startsWith('ar');
     const dateLocale = isRTL ? ar : enUS;
     const [userRole, setUserRole] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -178,7 +178,7 @@ export default function CustodySystem() {
         try {
             const { data, error } = await supabase
                 .from('app_users')
-                .select('id, email');
+                .select('id, email, full_name');
 
             if (error) throw error;
 
@@ -220,7 +220,7 @@ export default function CustodySystem() {
     remaining_balance,
     last_reset_date,
     updated_at,
-    app_users:app_users!custody_system_user_id_fkey(email)
+    app_users:app_users!custody_system_user_id_fkey(email, full_name)
   `);
 
             if (custodyErr) throw custodyErr;
@@ -230,7 +230,7 @@ export default function CustodySystem() {
                 .from('transactions')
                 .select(`
     *,
-    app_users:app_users!transactions_user_id_fkey(email),
+    app_users:app_users!transactions_user_id_fkey(email, full_name),
     properties(name)
   `)
                 .eq('source_type', 'custody')
@@ -246,6 +246,7 @@ export default function CustodySystem() {
                 id: custody.id,
                 user_id: custody.user_id,
                 email: custody.app_users?.email || 'Unknown',
+                full_name: custody.app_users?.full_name || custody.app_users?.email || 'Unknown',
                 custodyAmount: Number(custody.custody_amount || 0),
                 totalExpenses: Number(custody.total_expenses || 0),
                 remaining: Number(custody.remaining_balance || 0),
@@ -299,7 +300,8 @@ export default function CustodySystem() {
         // تطبيق البحث
         if (searchTerm) {
             filtered = filtered.filter(c =>
-                c.email.toLowerCase().includes(searchTerm.toLowerCase())
+                c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                c.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
             );
         }
 
@@ -467,30 +469,35 @@ export default function CustodySystem() {
 
     // ------------------------------ Render Helpers ------------------------------
     const renderEmployeeCustodyTable = () => (
-        <Table>
+        <Table dir={isRTL ? "rtl" : "ltr"}>
             <TableHeader>
                 <TableRow>
-                    <TableHead onClick={() => requestSort('email')} className='cursor-pointer'>
+                    <TableHead onClick={() => requestSort('email')} className='cursor-pointer text-start'>
                         {t("employee")} {getSortIcon('email')}
                     </TableHead>
-                    <TableHead onClick={() => requestSort('custodyAmount')} className='cursor-pointer'>
+                    <TableHead onClick={() => requestSort('custodyAmount')} className='cursor-pointer text-start'>
                         {t("custodyAmount")} {getSortIcon('custodyAmount')}
                     </TableHead>
-                    <TableHead onClick={() => requestSort('totalExpenses')} className='cursor-pointer'>
+                    <TableHead onClick={() => requestSort('totalExpenses')} className='cursor-pointer text-start'>
                         {t("totalExpenses")} {getSortIcon('totalExpenses')}
                     </TableHead>
-                    <TableHead onClick={() => requestSort('remaining')} className='cursor-pointer'>
+                    <TableHead onClick={() => requestSort('remaining')} className='cursor-pointer text-start'>
                         {t("remaining")} {getSortIcon('remaining')}
                     </TableHead>
-                    <TableHead>{t("status")}</TableHead>
-                    <TableHead>{t("lastUpdate")}</TableHead>
-                    <TableHead>{t("actions")}</TableHead>
+                    <TableHead className="text-start">{t("status")}</TableHead>
+                    <TableHead className="text-start">{t("lastUpdate")}</TableHead>
+                    <TableHead className="text-start">{t("actions")}</TableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
                 {filteredCustodies.map((c) => (
                     <TableRow key={c.user_id}>
-                        <TableCell className="font-medium">{c.email}</TableCell>
+                        <TableCell className="font-medium">
+                            <div className="flex flex-col">
+                                <span>{c.full_name}</span>
+                                <span className="text-xs text-muted-foreground">{c.email}</span>
+                            </div>
+                        </TableCell>
                         <TableCell>{formatCurrency(c.custodyAmount)}</TableCell>
                         <TableCell>{formatCurrency(c.totalExpenses)}</TableCell>
                         <TableCell>
@@ -519,7 +526,7 @@ export default function CustodySystem() {
 
 
 
-  
+
     const renderAllEmployeeTransactionsTable = () => {
         // Pagination logic 
         const indexOfLast = currentPage * transactionsPerPage;
@@ -529,7 +536,7 @@ export default function CustodySystem() {
 
         return (
             <div className="w-full overflow-x-auto">
-                <table className="w-full border-collapse border text-sm">
+                <table className="w-full border-collapse border text-sm" dir={isRTL ? "rtl" : "ltr"}>
                     <thead className="bg-gray-100">
                         <tr>
                             <th className="p-2 border">{t("employee")}</th>
@@ -544,7 +551,12 @@ export default function CustodySystem() {
                     <tbody>
                         {currentTransactions.map((tx) => (
                             <tr key={tx.id} className={tx.type === "expense" ? "bg-red-50" : "bg-green-50"}>
-                                <td className="p-2 border">{tx.app_users.email}</td>
+                                <td className="p-2 border">
+                                    <div className="flex flex-col">
+                                        <span className="font-medium">{tx.app_users?.full_name || 'Unknown'}</span>
+                                        <span className="text-xs text-muted-foreground">{tx.app_users?.email}</span>
+                                    </div>
+                                </td>
                                 <td className="p-2 border">
                                     {tx.date
                                         ? format(parseISO(tx.date), "dd/MM/yyyy", { locale: dateLocale })
@@ -651,28 +663,28 @@ export default function CustodySystem() {
                 </Button>
             </div>
             <Tabs defaultValue="employee_custodies" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="employee_custodies">{t("employeeCustodies")}</TabsTrigger>
-                    <TabsTrigger value="all_transactions">{t("allCustodyTransactions")}</TabsTrigger>
-                    <TabsTrigger value="my_expenses">{t("myCustodyExpenses")}</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-1 md:grid-cols-3 h-auto">
+                    <TabsTrigger value="employee_custodies" className="py-2">{t("employeeCustodies")}</TabsTrigger>
+                    <TabsTrigger value="all_transactions" className="py-2">{t("allCustodyTransactions")}</TabsTrigger>
+                    <TabsTrigger value="my_expenses" className="py-2">{t("myCustodyExpenses")}</TabsTrigger>
                 </TabsList>
                 {/* Tab 1: All Employee Custodies */}
                 <TabsContent value="employee_custodies">
                     <Card className="shadow-lg">
-                        <CardHeader className="flex flex-row items-center justify-between">
+                        <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                             <CardTitle>{t("allEmployeeCustodies")}</CardTitle>
-                            <div className="flex items-center space-x-2">
-                                <Button onClick={fetchAllCustodyData} disabled={isRefreshing} variant="outline" size="sm">
+                            <div className="flex items-center gap-2 w-full md:w-auto">
+                                <Button onClick={fetchAllCustodyData} disabled={isRefreshing} variant="outline" size="sm" className="shrink-0">
                                     {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                     <span className="sr-only">{t("refresh")}</span>
                                 </Button>
                                 <Dialog open={custodyDialogOpen} onOpenChange={setCustodyDialogOpen}>
                                     <DialogTrigger asChild>
-                                        <Button onClick={() => setNewCustody({ user_id: '', amount: '' })}>
+                                        <Button onClick={() => setNewCustody({ user_id: '', amount: '' })} className="flex-1 md:flex-none whitespace-nowrap">
                                             <Plus className="h-4 w-4 me-2" /> {t("setCustody")}
                                         </Button>
                                     </DialogTrigger>
-                                    <DialogContent> 
+                                    <DialogContent>
                                         <DialogHeader>
                                             <DialogTitle>{t("setCustodyAmount")}</DialogTitle>
                                             <DialogDescription>{t("fillAndSaveCustodyAmount")}</DialogDescription>
@@ -689,7 +701,9 @@ export default function CustodySystem() {
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {allUsers.map(u => (
-                                                            <SelectItem key={u.id} value={u.id}>{u.email}</SelectItem>
+                                                            <SelectItem key={u.id} value={u.id}>
+                                                                {u.full_name || u.email}
+                                                            </SelectItem>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
@@ -719,7 +733,7 @@ export default function CustodySystem() {
                         </CardHeader>
                         <CardContent>
                             <div className="flex justify-between items-center mb-4">
-                                <div className="flex space-x-2">
+                                <div className="flex gap-2">
                                     <Input
                                         placeholder={t("searchEmployee")}
                                         value={searchTerm}
@@ -738,19 +752,19 @@ export default function CustodySystem() {
                                     </Select>
                                 </div>
                             </div>
-                            <div className="border rounded-lg overflow-hidden">
+                            <div className="border rounded-lg overflow-hidden overflow-x-auto" dir={isRTL ? "rtl" : "ltr"}>
                                 {renderEmployeeCustodyTable()}
                             </div>
-                            <div className="mt-4 grid grid-cols-3 gap-4">
-                                <Card className="p-4 border-l-4 border-blue-500">
+                            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <Card className={`p-4 ${isRTL ? 'border-r-4' : 'border-l-4'} border-blue-500`}>
                                     <p className="text-sm text-gray-500">{t("totalCustodyGiven")}</p>
                                     <p className="text-xl font-bold">{formatCurrency(allEmployeeCustodies.reduce((sum, c) => sum + Number(c.custodyAmount || 0), 0))}</p>
                                 </Card>
-                                <Card className="p-4 border-l-4 border-red-500">
+                                <Card className={`p-4 ${isRTL ? 'border-r-4' : 'border-l-4'} border-red-500`}>
                                     <p className="text-sm text-gray-500">{t("totalExpenses")}</p>
                                     <p className="text-xl font-bold">{formatCurrency(allEmployeeCustodies.reduce((sum, c) => sum + Number(c.totalExpenses || 0), 0))}</p>
                                 </Card>
-                                <Card className="p-4 border-l-4 border-green-500">
+                                <Card className={`p-4 ${isRTL ? 'border-r-4' : 'border-l-4'} border-green-500`}>
                                     <p className="text-sm text-gray-500">{t("totalRemaining")}</p>
                                     <p className="text-xl font-bold">{formatCurrency(allEmployeeCustodies.reduce((sum, c) => sum + Number(c.remaining || 0), 0))}</p>
                                 </Card>
@@ -769,7 +783,7 @@ export default function CustodySystem() {
                             </Button>
                         </CardHeader>
                         <CardContent>
-                            <div className="border rounded-lg overflow-hidden">
+                            <div className="border rounded-lg overflow-hidden overflow-x-auto" dir={isRTL ? "rtl" : "ltr"}>
                                 {renderAllEmployeeTransactionsTable()}
                             </div>
                         </CardContent>
@@ -778,16 +792,16 @@ export default function CustodySystem() {
                 {/* Tab 3: My Custody Expenses (Admin's own) */}
                 <TabsContent value="my_expenses">
                     <Card className="shadow-lg">
-                        <CardHeader className="flex flex-row items-center justify-between">
+                        <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                             <CardTitle>{t("myCustodyExpenses")}</CardTitle>
-                            <div className="flex items-center space-x-2">
-                                <Button onClick={fetchAllCustodyData} disabled={isRefreshing} variant="outline" size="sm">
+                            <div className="flex items-center gap-2 w-full md:w-auto">
+                                <Button onClick={fetchAllCustodyData} disabled={isRefreshing} variant="outline" size="sm" className="shrink-0">
                                     {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                     <span className="sr-only">{t("refresh")}</span>
                                 </Button>
                                 <Dialog open={transactionDialogOpen} onOpenChange={setTransactionDialogOpen}>
                                     <DialogTrigger asChild>
-                                        <Button onClick={() => setNewTransaction({ type: 'expense', source_type: 'custody', amount: '', property_id: '', description: '', attachment: null })}>
+                                        <Button onClick={() => setNewTransaction({ type: 'expense', source_type: 'custody', amount: '', property_id: '', description: '', attachment: null })} className="flex-1 md:flex-none whitespace-nowrap">
                                             <Plus className="h-4 w-4 me-2" /> {t("addExpense")}
                                         </Button>
                                     </DialogTrigger>
@@ -855,7 +869,7 @@ export default function CustodySystem() {
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="grid grid-cols-3 gap-4 mb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                 <Card className="p-4 border-l-4 border-blue-500">
                                     <p className="text-sm text-gray-500">{t("myCustodyGiven")}</p>
                                     <p className="text-xl font-bold">{formatCurrency(myCustodyData.custodyAmount)}</p>
@@ -870,7 +884,7 @@ export default function CustodySystem() {
                                 </Card>
                             </div>
                             <h3 className="text-lg font-semibold mb-2">{t("myRecentTransactions")}</h3>
-                            <div className="border rounded-lg overflow-hidden">
+                            <div className="border rounded-lg overflow-hidden overflow-x-auto" dir={isRTL ? "rtl" : "ltr"}>
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
@@ -977,31 +991,17 @@ export default function CustodySystem() {
             <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
                 <DialogPortal>
                     <DialogOverlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" />
-                    <DialogContent
-                        aria-describedby="employee-details-description"
-                        className="max-w-6xl w-full max-h-[90vh] overflow-hidden bg-white rounded-xl shadow-2xl p-6 flex flex-col justify-start border border-gray-200"
-                    >
+                    <DialogContent className="max-w-6xl w-full max-h-[90vh] overflow-hidden bg-white rounded-xl shadow-2xl p-6 flex flex-col justify-start border border-gray-200">
                         {/* HEADER */}
                         <div className="flex justify-between items-start mb-4">
                             <DialogHeader className="flex-1">
                                 <DialogTitle className="text-2xl font-bold text-gray-900">
-                                    {t("employeeCustodyDetails")}: {selectedEmployee?.email}
+                                    {t("employeeCustodyDetails")}: {selectedEmployee?.full_name}
                                 </DialogTitle>
-                                <DialogDescription
-                                    id="employee-details-description"
-                                    className="text-gray-500"
-                                >
-                                    {t("detailsFor")} {selectedEmployee?.email}
+                                <DialogDescription className="text-gray-500">
+                                    {t("detailsFor")} {selectedEmployee?.full_name}
                                 </DialogDescription>
                             </DialogHeader>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setShowDetailsDialog(false)}
-                                className="text-gray-500 hover:text-gray-900"
-                            >
-                                ✕
-                            </Button>
                         </div>
                         {/* BODY */}
                         <div className="flex-1 overflow-y-auto pr-1">

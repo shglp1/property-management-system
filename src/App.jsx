@@ -25,7 +25,7 @@ import Layout from './components/Layout'
 
 // Protected Route Component - Only for Admins
 function ProtectedRoute({ children, allowedRoles = ['admin'] }) {
-  const { user, userRole, loading } = useAuth()
+  const { user, userRole, userStatus, loading } = useAuth()
 
   if (loading) {
     return (
@@ -46,13 +46,18 @@ function ProtectedRoute({ children, allowedRoles = ['admin'] }) {
     return <Navigate to={redirectPath} replace />
   }
 
+  // Check for inactive status
+  if (user && userStatus === 'inactive') {
+    return <Navigate to="/login" replace />
+  }
+
   // For Admins, wrap with the main layout
   return <Layout>{children}</Layout>
 }
 
 // Employee Route Component - Only for Employees
 function EmployeeRoute({ children }) {
-  const { user, userRole, loading } = useAuth()
+  const { user, userRole, userStatus, loading } = useAuth()
 
   if (loading) {
     return (
@@ -69,6 +74,10 @@ function EmployeeRoute({ children }) {
   // If a non-employee tries to access this page, redirect them to the admin home
   if (userRole !== 'employee') {
     return <Navigate to="/" replace />
+  }
+
+  if (userStatus === 'inactive') {
+    return <Navigate to="/login" replace />
   }
 
   // Employees get the page content directly, without the main Layout/Sidebar

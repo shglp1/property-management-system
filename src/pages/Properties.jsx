@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import { Building2, Plus, Edit, Trash2, Search, Link, FileText, Phone, MapPin, Download, Eye, AlertCircle, CheckCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
@@ -176,6 +176,14 @@ export default function Properties() {
   const handleDownload = async (url, filename) => {
     try {
       const response = await fetch(url)
+      if (!response.ok) {
+        if (response.status === 404) {
+          alert('الملف غير موجود') // Or use translation if available
+          return
+        }
+        throw new Error('Download failed')
+      }
+
       const blob = await response.blob()
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
@@ -339,6 +347,9 @@ export default function Properties() {
                 <DialogTitle>
                   {editingProperty ? t('editProperty') : t('addProperty')}
                 </DialogTitle>
+                <DialogDescription>
+                  {t('fillPropertyDetails') || (t('direction') === 'rtl' ? "أدخل تفاصيل العقار أدناه." : "Enter property details below.")}
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">

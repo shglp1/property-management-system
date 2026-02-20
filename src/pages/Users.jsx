@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -55,12 +56,32 @@ export default function Users() {
 
   const [formData, setFormData] = useState({
     email: "",
+    full_name: "",
     role: "employee",
     password: "",
+    confirmPassword: "",
     status: "active",
     salary: "",
     salary_advance: "",
   });
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // OTP State
+  const [otpMode, setOtpMode] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifyingEmail, setVerifyingEmail] = useState("");
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [processingOtp, setProcessingOtp] = useState(false);
+  /* eslint-disable react-hooks/exhaustive-deps */
+
+  useEffect(() => {
+    let interval;
+    if (otpTimer > 0) {
+      interval = setInterval(() => setOtpTimer((prev) => prev - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [otpTimer]);
 
   useEffect(() => {
     fetchUsers();
@@ -76,7 +97,11 @@ export default function Users() {
       .from("app_users")
       .select("*")
       .order("created_at", { ascending: false });
-    if (error) console.error(error);
+
+    if (error) {
+      console.error("Error fetching users:", error);
+    }
+
     setUsers(data || []);
     setLoading(false);
   };
@@ -90,106 +115,145 @@ export default function Users() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
-    const payload = {
-      email: formData.email.trim(),
-      role: formData.role,
-      status: formData.status,
-      salary: parseFloat(formData.salary) || 0,
-      salary_advance: parseFloat(formData.salary_advance) || 0,
-    };
+    setIsSubmitting(true);
+
+    // Validate passwords for new users or if password is provided
+    if ((!editingUser || formData.password) && (!formData.password || formData.password.length < 6)) {
+      toast.error(isArabic ? "كلمة المرور يجب أن تكون 6 أحرف على الأقل" : "Password must be at least 6 characters");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      toast.error(isArabic ? "كلمتا المرور غير متطابقتين" : "Passwords do not match");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
-      let error;
+      let authUserId = null;
 
       if (editingUser) {
-        ({ error } = await supabase
-          .from("app_users")
-          .update(payload)
-          .eq("id", editingUser.id));
-      } else {
-        if (!formData.password || formData.password.length < 6) {
-          toast.error(
-            isArabic
-              ? "يجب أن تكون كلمة المرور 6 أحرف على الأقل"
-              : "Password must be at least 6 characters."
-          );
-          return;
-        }
-
-        const { data: existingAppUser, error: existingError } = await supabase
-          .from("app_users")
-          .select("id")
-          .eq("email", payload.email)
-          .maybeSingle();
-
-        if (existingError) {
-          console.error("Error checking existing user:", existingError);
-          toast.error(t("error"));
-          return;
-        }
-
-        if (existingAppUser) {
-          toast.error(
-            isArabic
-              ? "يوجد مستخدم مسجل بهذا البريد الإلكتروني بالفعل."
-              : "A user with this email already exists."
-          );
-          return;
-        }
-
-        const { data: signUpData, error: signUpError } =
-          await supabaseAdmin.auth.signUp({
-            email: payload.email,
-            password: formData.password,
+        // --- EDIT FLOW ---
+        // 1. Update Password if provided
+        if (formData.password) {
+          const { data: funcData, error: funcError } = await supabase.functions.invoke('admin-tasks', {
+            body: {
+              action: 'change_password',
+              user_id: editingUser.id,
+              email: editingUser.email, // Added email
+              password: formData.password
+            }
           });
 
-        if (signUpError) {
-          console.error("Auth signUp error:", signUpError);
-
-          const msg = signUpError.message?.includes(
-            "Database error saving new user"
-          )
-            ? isArabic
-              ? "هذا البريد مسجل بالفعل في نظام الدخول."
-              : "This email is already registered in Auth."
-            : signUpError.message?.includes("For security purposes")
-            ? isArabic
-              ? "حاول مرة أخرى بعد دقيقة، يوجد حد على عدد محاولات إنشاء الحساب."
-              : "Please wait about a minute before creating another user (rate limit)."
-            : isArabic
-            ? "حدث خطأ عند إنشاء حساب الدخول."
-            : "Error creating auth user.";
-
-          toast.error(msg);
-          return;
+          if (funcError || (funcData && funcData.error)) {
+            const e = new Error("Password update failed");
+            e.cause = funcData?.error || funcError;
+            throw e;
+          }
         }
 
-        ({ error } = await supabase.from("app_users").insert([payload]));
+        // 2. Update Public Data
+        const { error } = await supabase
+          .from("app_users")
+          .update({
+            full_name: formData.full_name,
+            role: formData.role,
+            status: formData.status,
+            salary: parseFloat(formData.salary) || 0,
+            salary_advance: parseFloat(formData.salary_advance) || 0,
+          })
+          .eq("id", editingUser.id);
+
+        if (error) throw error;
+        toast.success(t("success"));
+
+      } else {
+        // --- ADD FLOW (Password Base) ---
+        // ... (unchanged)
+        const { data: funcData, error: funcError } = await supabase.functions.invoke('admin-tasks', {
+          body: {
+            action: 'create_user',
+            email: formData.email,
+            password: formData.password,
+            full_name: formData.full_name,
+            role: formData.role
+          }
+        });
+
+        if (funcError || (funcData && funcData.error)) {
+          const e = new Error("Request failed");
+          e.cause = funcData?.error || funcError;
+          throw e;
+        }
+
+        authUserId = funcData.user.id;
+
+        const { error: upsertError } = await supabase
+          .from("app_users")
+          .upsert({
+            id: authUserId,
+            email: formData.email,
+            full_name: formData.full_name,
+            role: formData.role,
+            status: formData.status,
+            salary: parseFloat(formData.salary) || 0,
+            salary_advance: parseFloat(formData.salary_advance) || 0,
+          });
+
+        if (upsertError) throw upsertError;
+        toast.success(t("success"));
       }
 
-      if (error) {
-        toast.error(t("error"));
-        console.error(error);
-        return;
-      }
-
-      toast.success(t("success"));
       setDialogOpen(false);
       setEditingUser(null);
       resetForm();
-      fetchUsers();
+      setTimeout(() => fetchUsers(), 500);
     } catch (err) {
       console.error(err);
-      toast.error(t("error"));
+      let msg = err.message;
+      if (err.cause) {
+        if (typeof err.cause === 'object' && err.cause.error) {
+          msg = err.cause.error;
+        } else if (typeof err.cause === 'string') {
+          msg = err.cause;
+        } else {
+          msg = JSON.stringify(err.cause);
+        }
+      }
+
+      msg = msg.replace("INTERNAL ERROR: ", "");
+
+      if (msg.includes("UserSyncError")) {
+        msg = isArabic
+          ? "خطأ في المزامنة: المستخدم موجود في قاعدة البيانات ولكن غير موجود في نظام المصادقة. يرجى حذف المستخدم وإعادة إنشائه."
+          : "Sync Error: User exists in DB but missing from Auth. Please delete and recreate the user.";
+      }
+
+      if (msg.includes("Session from session_id claim in JWT does not exist") || msg.includes("Unauthorized")) {
+        toast.error(isArabic ? "انتهت الجلسة، يرجى تسجيل الدخول مجدداً" : "Session expired, please login again");
+        await supabase.auth.signOut();
+        window.location.href = "/login";
+        return;
+      }
+
+      toast.error(t("error") + ": " + msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  // Removed OTP handlers (handleVerifyOtp, handleResendOtp) as they are no longer needed.
 
   const handleEdit = (user) => {
     setEditingUser(user);
     setFormData({
       email: user.email,
+      full_name: user.full_name || "",
       password: "",
+      confirmPassword: "",
       role: user.role,
       status: user.status,
       salary: user.salary || "",
@@ -211,12 +275,20 @@ export default function Users() {
   const resetForm = () => {
     setFormData({
       email: "",
+      full_name: "",
       password: "",
+      confirmPassword: "",
       role: "employee",
       status: "active",
       salary: "",
       salary_advance: "",
     });
+    setEditingUser(null);
+    setOtpMode(false);
+    setOtpCode("");
+    setVerifyingEmail("");
+    setOtpTimer(0);
+    setIsSubmitting(false);
   };
 
   const exportToExcel = () => {
@@ -260,15 +332,14 @@ export default function Users() {
       <div className="flex flex-wrap gap-4 items-center justify-between">
         <div className="flex-1 max-w-md relative">
           <Search
-            className={`absolute ${
-              isArabic ? "right-3" : "left-3"
-            } top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground`}
+            className={`absolute ${isArabic ? "right-3" : "left-3"
+              } top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground`}
           />
           <Input
             placeholder={t("search")}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className={`${isArabic ? "pr-10" : "pl-10"}`}
+            className={`${isArabic ? "pr-10 text-right" : "pl-10 text-left"}`}
           />
         </div>
 
@@ -286,127 +357,169 @@ export default function Users() {
                 {t("addUser")}
               </Button>
             </DialogTrigger>
-            <DialogContent dir={dir}>
+            <DialogContent dir={dir} className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>
                   {editingUser ? t("editUser") : t("addUser")}
                 </DialogTitle>
+                <DialogDescription>
+                  {isArabic ? "أدخل تفاصيل المستخدم أدناه." : "Enter user details below."}
+                </DialogDescription>
               </DialogHeader>
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label>{t("email")}</Label>
-                  <Input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    required
-                    disabled={editingUser}
-                  />
-                </div>
-                {!editingUser && (
+                {/* --- Normal Form --- */}
+                <>
                   <div>
-                    <Label>{t("password")}</Label>
+                    <Label>{t("email")}</Label>
                     <Input
-                      type="password"
-                      value={formData.password}
+                      type="email"
+                      value={formData.email}
                       onChange={(e) =>
-                        setFormData({ ...formData, password: e.target.value })
+                        setFormData({ ...formData, email: e.target.value })
                       }
                       required
+                      disabled={editingUser} // Admin can't change email of existing user
                     />
-                    <p className="text-xs text-muted-foreground">
-                      {isArabic
-                        ? "سيتم استخدام هذه ككلمة المرور لتسجيل دخول المستخدم"
-                        : "This will be the user's login password."}
-                    </p>
                   </div>
-                )}
 
-                {/* role select */}
-                <div>
-                  <Label>{t("userRole")}</Label>
-                  <Select
-                    value={formData.role}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, role: value })
-                    }
-                  >
-                    <SelectTrigger className="w-full border rounded-md">
-                      <SelectValue placeholder={t("select")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">{t("admin")}</SelectItem>
-                      <SelectItem value="employee">{t("employee")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div>
+                    <Label>{isArabic ? "الاسم الكامل" : "Full Name"}</Label>
+                    <Input
+                      value={formData.full_name}
+                      onChange={(e) =>
+                        setFormData({ ...formData, full_name: e.target.value })
+                      }
+                    />
+                  </div>
 
-                {/* status select */}
-                <div>
-                  <Label>{t("userStatus")}</Label>
-                  <Select
-                    value={formData.status}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, status: value })
-                    }
-                  >
-                    <SelectTrigger className="w-full border rounded-md">
-                      <SelectValue placeholder={t("select")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">{t("active")}</SelectItem>
-                      <SelectItem value="inactive">{t("inactive")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  {/* Password Fields - Required for New, Optional for Edit */}
+                  <div className="border rounded-lg p-3 bg-muted/20 space-y-3">
+                    <h4 className="text-sm font-semibold">
+                      {editingUser
+                        ? (isArabic ? "تغيير كلمة المرور (اختياري)" : "Change Password (Optional)")
+                        : (isArabic ? "تعيين كلمة المرور" : "Set Password")
+                      }
+                    </h4>
+                    <div>
+                      <Label className="text-xs">{isArabic ? "كلمة المرور" : "Password"}</Label>
+                      <Input
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="******"
+                        required={!editingUser} // Required for new users
+                        className={formData.password && formData.password.length >= 6 ? "border-green-500" : ""}
+                      />
+                      {/* Password Strength Hint */}
+                      <p className={`text-[10px] mt-1 ${formData.password && formData.password.length >= 6 ? "text-green-600 font-medium" : "text-muted-foreground"}`}>
+                        {isArabic ? "يجب أن تكون 6 أحرف على الأقل" : "Must be at least 6 characters"}
+                        {formData.password && formData.password.length >= 6 && " ✓"}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-xs">{isArabic ? "تأكيد كلمة المرور" : "Confirm Password"}</Label>
+                      <Input
+                        type="password"
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        required={!editingUser}
+                        className={formData.confirmPassword && formData.password !== formData.confirmPassword ? "border-red-500" : (formData.confirmPassword ? "border-green-500" : "")}
+                      />
+                      {/* Match Error */}
+                      {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                        <p className="text-[10px] text-red-600 mt-1 font-medium">
+                          {isArabic ? "كلمتا المرور غير متطابقتين" : "Passwords do not match"}
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-                <div>
-                  <Label>{t("salary")}</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={formData.salary}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        salary: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <Label>{t("salaryAdvance")}</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={formData.salary_advance}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        salary_advance: e.target.value,
-                      })
-                    }
-                  />
-                </div>
+                  {/* role select */}
+                  <div>
+                    <Label>{t("userRole")}</Label>
+                    <Select
+                      value={formData.role}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, role: value })
+                      }
+                    >
+                      <SelectTrigger className="w-full border rounded-md">
+                        <SelectValue placeholder={t("select")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">{t("admin")}</SelectItem>
+                        <SelectItem value="employee">{t("employee")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div className="bg-gray-50 p-3 rounded-md text-sm border">
-                  <strong>{t("netBalance")}:</strong>{" "}
-                  {(
-                    (parseFloat(formData.salary) || 0) -
-                    (parseFloat(formData.salary_advance) || 0)
-                  ).toFixed(2)}{" "}
-                  {isArabic ? "ريال" : "SAR"}
-                </div>
+                  {/* status select */}
+                  <div>
+                    <Label>{t("userStatus")}</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, status: value })
+                      }
+                    >
+                      <SelectTrigger className="w-full border rounded-md">
+                        <SelectValue placeholder={t("select")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">{t("active")}</SelectItem>
+                        <SelectItem value="inactive">{t("inactive")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                    {t("cancel")}
-                  </Button>
-                  <Button type="submit">{t("save")}</Button>
-                </DialogFooter>
+                  <div>
+                    <Label>{t("salary")}</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={formData.salary}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          salary: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>{t("salaryAdvance")}</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={formData.salary_advance}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          salary_advance: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="bg-gray-50 p-3 rounded-md text-sm border">
+                    <strong>{t("netBalance")}:</strong>{" "}
+                    {(
+                      (parseFloat(formData.salary) || 0) -
+                      (parseFloat(formData.salary_advance) || 0)
+                    ).toFixed(2)}{" "}
+                    {isArabic ? "ريال" : "SAR"}
+                  </div>
+
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                      {t("cancel")}
+                    </Button>
+                    <Button type="submit" disabled={isSubmitting}>
+                      {isSubmitting ? t("loading") : t("save")}
+                    </Button>
+                  </DialogFooter>
+                </>
               </form>
             </DialogContent>
           </Dialog>
@@ -429,6 +542,9 @@ export default function Users() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className={isArabic ? "text-right" : "text-left"}>
+                  {isArabic ? "الاسم" : "Name"}
+                </TableHead>
                 <TableHead className={isArabic ? "text-right" : "text-left"}>
                   {t("email")}
                 </TableHead>
@@ -461,6 +577,9 @@ export default function Users() {
                   key={u.id}
                   className={isArabic ? "text-right" : "text-left"}
                 >
+                  <TableCell>
+                    {u.full_name || u.email.split('@')[0]}
+                  </TableCell>
                   <TableCell>{u.email}</TableCell>
                   <TableCell>{t(u.role)}</TableCell>
                   <TableCell>{t(u.status)}</TableCell>

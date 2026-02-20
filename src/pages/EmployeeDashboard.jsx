@@ -63,7 +63,7 @@ const formatCurrency = (amount, currency = "SAR") => {
 
 export default function EmployeeDashboard() {
   const { t, i18n, ready } = useTranslation();
-  const { user, signOut } = useAuth();
+  const { user, signOut, userProfile } = useAuth(); // Added userProfile
   const isRTL = i18n.language === "ar";
   const locale = isRTL ? ar : enUS;
   const dir = isRTL ? "rtl" : "ltr";
@@ -294,7 +294,7 @@ export default function EmployeeDashboard() {
             {t("employeeDashboard")}
           </h1>
           <p className="text-lg text-gray-600">
-            {t("welcome")}, {user?.email}
+            {t("welcome")}, {userProfile?.full_name || user?.email}
           </p>
         </div>
         <Button

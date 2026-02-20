@@ -19,13 +19,15 @@ import {
   Globe,
   Wallet,
 } from 'lucide-react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 export default function Layout({ children }) {
   const { t, i18n } = useTranslation()
-  const { user, signOut } = useAuth()
+  const { user, signOut, userProfile } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
+
+  const navigate = useNavigate()
 
   const isRTL = i18n.language === 'ar'
 
@@ -53,6 +55,7 @@ export default function Layout({ children }) {
   const handleLogout = async () => {
     try {
       await signOut()
+      navigate('/login', { replace: true })
     } catch (error) {
       console.error('Error logging out:', error)
     }
@@ -70,7 +73,7 @@ export default function Layout({ children }) {
       <aside
         className={`fixed top-0 ${isRTL ? 'right-0' : 'left-0'} z-50 h-full w-64 transform bg-card border-${isRTL ? 'l' : 'r'} transition-transform duration-300 ease-in-out 
         ${sidebarOpen ? 'translate-x-0' : isRTL ? 'translate-x-full' : '-translate-x-full'}
-        lg:translate-x-0`} 
+        lg:translate-x-0`}
       >
         <div className="flex h-full flex-col">
 
@@ -95,8 +98,8 @@ export default function Layout({ children }) {
                   key={item.href}
                   to={item.href}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                     }`}
                   onClick={() => setSidebarOpen(false)}
                 >
@@ -110,10 +113,12 @@ export default function Layout({ children }) {
           <div className="border-t p-4">
             <div className="mb-3 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                {user?.email?.charAt(0).toUpperCase() || 'U'}
+                {(userProfile?.full_name || user?.user_metadata?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 overflow-hidden">
-                <p className="truncate text-sm font-medium">{user?.email}</p>
+                <p className="truncate text-sm font-medium">
+                  {userProfile?.full_name || user?.user_metadata?.full_name || user?.email}
+                </p>
               </div>
             </div>
             <div className="space-y-2">

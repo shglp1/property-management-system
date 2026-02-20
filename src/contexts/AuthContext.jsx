@@ -13,7 +13,9 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
+  const [userProfile, setUserProfile] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const [userStatus, setUserStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState(null)
 
@@ -21,26 +23,33 @@ export const AuthProvider = ({ children }) => {
     const fetchUserRole = async (currentUser) => {
       if (!currentUser) {
         setUserRole(null)
+        setUserStatus(null)
+        setUserProfile(null)
         return
       }
 
       try {
         const { data, error } = await supabase
           .from('app_users')
-          .select('role')
-          .eq('email', currentUser.email)
-          .single()
+          .select('role, status, full_name')
+          .eq('id', currentUser.id)
+          .maybeSingle()
 
         if (error) {
           console.error('Error fetching user role:', error)
           setUserRole(null)
+          setUserStatus(null)
+          setUserProfile(null)
           return
         }
 
         setUserRole(data?.role || null)
+        setUserStatus(data?.status || null)
+        setUserProfile(data || null)
       } catch (error) {
         console.error('Error fetching user role:', error)
         setUserRole(null)
+        setUserProfile(null)
       }
     }
 
@@ -53,6 +62,8 @@ export const AuthProvider = ({ children }) => {
         await fetchUserRole(currentUser)
       } else {
         setUserRole(null)
+        setUserStatus(null)
+        setUserProfile(null)
       }
       setLoading(false)
     }
@@ -95,11 +106,13 @@ export const AuthProvider = ({ children }) => {
   const value = {
     user,
     userRole,
+    userStatus,
     session,
     loading,
     signIn,
     signOut,
     resetPassword,
+    userProfile,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

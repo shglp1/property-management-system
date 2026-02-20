@@ -691,7 +691,7 @@ export default function Dashboard() {
             </Button>
 
             {showExportOptions && (
-              <div className="absolute right-0 mt-2 w-48 bg-popover border rounded-md shadow-lg z-10 p-2">
+              <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} mt-2 w-48 bg-popover border rounded-md shadow-lg z-10 p-2`}>
                 <Button
                   variant="ghost"
                   className="w-full justify-start"

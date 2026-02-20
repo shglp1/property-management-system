@@ -197,6 +197,14 @@ export default function Rentals() {
   const handleDownload = async (url, filename) => {
     try {
       const response = await fetch(url);
+      if (!response.ok) {
+        if (response.status === 404) {
+          alert(t('fileNotFound') || 'الملف غير موجود');
+          return;
+        }
+        throw new Error('Download failed');
+      }
+
       const blob = await response.blob();
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
