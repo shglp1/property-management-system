@@ -122,6 +122,12 @@ export default function Transactions() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const allowedExtensions = /\.(jpg|jpeg|png|pdf|docx)$/i;
+    if (!file.name.match(allowedExtensions)) {
+      alert("صيغة الملف غير مدعومة. المسموح: JPG, PNG, PDF, DOCX");
+      return;
+    }
+
     try {
       const ext = file.name.split(".").pop(); // الامتداد
       const cleanBase = file.name
@@ -303,6 +309,8 @@ export default function Transactions() {
               <SelectItem value="all">{t("all")}</SelectItem>
               <SelectItem value="income">{t("income")}</SelectItem>
               <SelectItem value="expense">{t("expense")}</SelectItem>
+              <SelectItem value="salary_advance">{t("salary_advance")}</SelectItem>
+              <SelectItem value="salary_advance_repayment">{t("salary_advance_repayment")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -339,6 +347,8 @@ export default function Transactions() {
                   <SelectContent>
                     <SelectItem value="income">{t("income")}</SelectItem>
                     <SelectItem value="expense">{t("expense")}</SelectItem>
+                    <SelectItem value="salary_advance">{t("salary_advance")}</SelectItem>
+                    <SelectItem value="salary_advance_repayment">{t("salary_advance_repayment")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -410,7 +420,7 @@ export default function Transactions() {
               )}
               <div className="space-y-2">
                 <Label>{t("attachments")}</Label>
-                <Input type="file" onChange={handleFileUpload} />
+                <Input type="file" accept=".jpg,.jpeg,.png,.docx,.pdf,image/jpeg,image/png,application/pdf" onChange={handleFileUpload} />
                 {formData.attachment_path && (
                   <a
                     href={formData.attachment_path}

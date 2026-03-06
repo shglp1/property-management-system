@@ -154,6 +154,12 @@ export default function Invoices() {
     const file = e.target.files?.[0]
     if (!file) return
 
+    const allowedExtensions = /\.(jpg|jpeg|png|pdf|docx)$/i;
+    if (!file.name.match(allowedExtensions)) {
+      alert("Invalid file format. Allowed: JPG, PNG, PDF, DOCX");
+      return;
+    }
+
     setUploading(true)
     try {
       const safeKey = file.name
@@ -530,6 +536,7 @@ export default function Invoices() {
                   <Input
                     id="file"
                     type="file"
+                    accept=".jpg,.jpeg,.png,.docx,.pdf,image/jpeg,image/png,application/pdf"
                     onChange={handleFileChange}
                     disabled={uploading}
                   />

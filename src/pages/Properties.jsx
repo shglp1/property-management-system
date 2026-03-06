@@ -44,6 +44,12 @@ export default function Properties() {
     const file = e.target.files[0];
     if (!file) return;
 
+    const allowedExtensions = /\.(jpg|jpeg|png|pdf|docx)$/i;
+    if (!file.name.match(allowedExtensions)) {
+      alert("صيغة الملف غير مدعومة. المسموح: JPG, PNG, PDF, DOCX");
+      return;
+    }
+
     // 🧽 تنظيف اسم الملف والمسار من الرموز والمسافات
     const cleanName = (formData.name || "property")
       .replace(/[^a-zA-Z0-9_-]/g, "_") // يمنع العربية والرموز
@@ -461,6 +467,7 @@ export default function Properties() {
                       <Input
                         id="purchase_deed_path"
                         type="file"
+                        accept=".jpg,.jpeg,.png,.docx,.pdf,image/jpeg,image/png,application/pdf"
                         onChange={(e) => handleFileChange(e, 'purchase_deed_path')}
                       />
                       {formData.purchase_deed_path && (
@@ -478,6 +485,7 @@ export default function Properties() {
                       <Input
                         id="ownership_deed_path"
                         type="file"
+                        accept=".jpg,.jpeg,.png,.docx,.pdf,image/jpeg,image/png,application/pdf"
                         onChange={(e) => handleFileChange(e, 'ownership_deed_path')}
                       />
                       {formData.ownership_deed_path && (
@@ -495,6 +503,7 @@ export default function Properties() {
                       <Input
                         id="construction_license_path"
                         type="file"
+                        accept=".jpg,.jpeg,.png,.docx,.pdf,image/jpeg,image/png,application/pdf"
                         onChange={(e) => handleFileChange(e, 'construction_license_path')}
                       />
                       {formData.construction_license_path && (

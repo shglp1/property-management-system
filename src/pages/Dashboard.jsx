@@ -5,9 +5,9 @@ import { supabase } from '@/lib/supabaseClient'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts'
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, LabelList } from 'recharts'
 import { TrendingUp, TrendingDown, DollarSign, Building2, Download, Calendar, Filter, BarChart3, PieChart as PieChartIcon, Activity, Eye, RefreshCw, AlertTriangle, CheckCircle, Clock, FileSpreadsheet, File, Calendar as CalendarIcon, X } from 'lucide-react'
-import { format, subMonths, startOfMonth, endOfMonth, parseISO, isBefore, isAfter } from 'date-fns'
+import { format, subMonths, startOfMonth, endOfMonth, parseISO, isBefore, isAfter, differenceInDays, subDays } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -45,6 +45,9 @@ export default function Dashboard() {
     totalCustodyGiven: 0,
     totalCustodyExpenses: 0,
     totalCustodyRemaining: 0,
+    totalAdvances: 0,
+    totalRepayments: 0,
+    outstandingAdvances: 0,
   })
 
 
@@ -152,11 +155,62 @@ export default function Dashboard() {
 
       if (transactionsError) throw transactionsError
 
+      // Calculate previous date range for period-over-period comparison
+      let prevStart, prevEnd;
+      if (dateRange === 'thisMonth' || dateRange === 'lastMonth') {
+        const lm = subMonths(start, 1);
+        prevStart = startOfMonth(lm);
+        prevEnd = endOfMonth(lm);
+      } else if (dateRange === 'last3Months') {
+        prevStart = subMonths(start, 3);
+        prevEnd = subDays(start, 1);
+      } else if (dateRange === 'custom') {
+        const diffDays = differenceInDays(end, start);
+        prevStart = subDays(start, diffDays + 1);
+        prevEnd = subDays(start, 1);
+      } else {
+        const lm = subMonths(start, 1);
+        prevStart = startOfMonth(lm);
+        prevEnd = endOfMonth(lm);
+      }
+
+      let prevTransactionsQuery = supabase
+        .from('transactions')
+        .select('type, amount')
+        .gte('date', prevStart.toISOString())
+        .lte('date', prevEnd.toISOString());
+
+      if (selectedProperty !== 'all') {
+        prevTransactionsQuery = prevTransactionsQuery.eq('property_id', selectedProperty);
+      }
+
+      const { data: prevTransactions, error: prevError } = await prevTransactionsQuery;
+      let prevTotalIncome = 0;
+      let prevTotalExpenses = 0;
+
+      if (!prevError && prevTransactions) {
+        prevTransactions.forEach(t => {
+          const amt = Math.abs(Number(t.amount) || 0);
+          if (t.type === 'income') prevTotalIncome += amt;
+          else if (t.type === 'expense') prevTotalExpenses += amt;
+        });
+      }
+
+      const calculateChange = (current, previous) => {
+        if (!previous || previous === 0) {
+          if (!current || current === 0) return 0;
+          return null; // Indicates insufficient data
+        }
+        return ((current - previous) / previous) * 100;
+      };
+
       // Calculate KPIs
       // --- KPI جديد ---
       let totalIncome = 0;
       let totalExpenses = 0;
       let totalCustodyExpenses = 0;
+      let totalAdvances = 0;
+      let totalRepayments = 0;
 
       //  احسب الدخل والمصروفات بشكل صحيح حسب المطلوب
       // احسب الدخل والمصروفات بحيث تشمل كل المصروفات (العهدة + الممتلكات)
@@ -166,11 +220,16 @@ export default function Dashboard() {
         // إجمالي الدخل فقط من الممتلكات
         if (t.type === 'income') {
           totalIncome += amount;
-        }
-
-        // إجمالي المصروفات من كل المصادر (property + custody)
-        if (t.type === 'expense') {
+        } else if (t.type === 'expense') {
           totalExpenses += amount;
+          // Capture strict custody expenses filtered by active time range and active property
+          if (t.source_type === 'custody') {
+            totalCustodyExpenses += amount;
+          }
+        } else if (t.type === 'salary_advance') {
+          totalAdvances += amount;
+        } else if (t.type === 'salary_advance_repayment') {
+          totalRepayments += amount;
         }
       });
 
@@ -249,36 +308,18 @@ export default function Dashboard() {
         }
       })
 
-      // Calculate expenses by category (simplified)
-      const maintenanceText = t('maintenance') || 'صيانة'
-      const utilitiesText = t('utilities') || 'مرافق'
-      const otherText = t('other') || 'أخرى'
-      const custodyExpensesText = t('custodyExpenses') || 'مصروفات عهدة' // --- نص جديد ---
+      // Calculate true system-level expense mapping without arbitrary categories
+      const operationalText = isRTL ? 'مصروفات تشغيلية' : 'Operational Expenses';
+      const custodyText = isRTL ? 'مصروفات العهد' : 'Custody Expenses';
+      const advancesText = isRTL ? 'سلف الموظفين' : 'Employee Advances';
 
-      const categoryMap = {
-        [maintenanceText]: 0,
-        [utilitiesText]: 0,
-        [otherText]: 0,
-        [custodyExpensesText]: 0, // --- فئة جديدة ---
-      }
+      let computedTotalAdvances = totalAdvances || 0;
 
-      transactions?.forEach((tx) => {
-        if (tx.type === 'expense') {
-          if (tx.source_type === 'custody') {
-            // --- فئة منفصلة لمصروفات العهدة ---
-            categoryMap[custodyExpensesText] += Math.abs(tx.amount)
-          } else {
-            // Simple categorization based on description for property expenses
-            if (tx.description?.includes('صيانة') || tx.description?.includes('maintenance')) {
-              categoryMap[maintenanceText] += tx.amount
-            } else if (tx.description?.includes('مرافق') || tx.description?.includes('utilities')) {
-              categoryMap[utilitiesText] += tx.amount
-            } else {
-              categoryMap[otherText] += tx.amount
-            }
-          }
-        }
-      })
+      const byCategory = [
+        { name: operationalText, value: totalExpenses },
+        { name: custodyText, value: totalCustodyExpenses },
+        { name: advancesText, value: computedTotalAdvances }
+      ].filter(item => item.value > 0);
 
 
       setKpis({
@@ -286,12 +327,17 @@ export default function Dashboard() {
         totalExpenses,
         netBalance: totalIncome - totalExpenses,
         activeProperties: propertiesCount || 0,
-        incomeChange: 5.2, // Mock data
-        expensesChange: -3.1, // Mock data
+        incomeChange: calculateChange(totalIncome, prevTotalIncome),
+        expensesChange: calculateChange(totalExpenses, prevTotalExpenses),
+        prevTotalIncome: prevTotalIncome || 0,
+        prevTotalExpenses: prevTotalExpenses || 0,
         // --- KPIs ---
         totalCustodyGiven: custodySummary.totalGiven,
-        totalCustodyExpenses: custodySummary.totalExpenses, //custody_system
+        totalCustodyExpenses: totalCustodyExpenses, // Computed dynamically from filtered transactions
         totalCustodyRemaining: custodySummary.totalRemaining,
+        totalAdvances,
+        totalRepayments,
+        outstandingAdvances: totalAdvances - totalRepayments,
       })
 
 
@@ -309,7 +355,7 @@ export default function Dashboard() {
       setChartData({
         trend: Object.values(trendMap),
         byProperty: Object.entries(propertyMap).map(([name, value]) => ({ name, value })),
-        byCategory: Object.entries(categoryMap).map(([name, value]) => ({ name, value })),
+        byCategory,
       })
 
       setError(null)
@@ -329,7 +375,7 @@ export default function Dashboard() {
       [t('description')]: tx.description,
       [t('amount')]: Number(tx.amount),
       [t('date')]: format(new Date(tx.date), 'dd/MM/yyyy'),
-      [t('transactionType')]: tx.type === 'income' ? t('income') : t('expense'),
+      [t('transactionType')]: t(tx.type),
       [t('sourceType')]:
         tx.source_type === 'custody'
           ? 'العهدة'
@@ -361,6 +407,9 @@ export default function Dashboard() {
     const summaryData = [
       { [t('metric')]: t('totalIncome'), [t('value')]: kpis.totalIncome.toFixed(2) },
       { [t('metric')]: t('totalExpenses'), [t('value')]: kpis.totalExpenses.toFixed(2) },
+      { [t('metric')]: t('totalAdvances'), [t('value')]: kpis.totalAdvances.toFixed(2) },
+      { [t('metric')]: t('totalRepayments'), [t('value')]: kpis.totalRepayments.toFixed(2) },
+      { [t('metric')]: t('outstandingAdvances'), [t('value')]: kpis.outstandingAdvances.toFixed(2) },
       { [t('metric')]: t('netBalance'), [t('value')]: kpis.netBalance.toFixed(2) },
       { [t('metric')]: t('totalCustodyGiven'), [t('value')]: kpis.totalCustodyGiven.toFixed(2) }, // --- إضافة إلى الملخص ---
       { [t('metric')]: t('totalCustodyExpenses'), [t('value')]: kpis.totalCustodyExpenses.toFixed(2) }, // --- إضافة إلى الملخص ---
@@ -508,6 +557,9 @@ export default function Dashboard() {
             <h3>${t('netBalance')}</h3>
             <p class="balance">${Number(kpis.netBalance.toFixed(2))} ر.س</p>
           </div>
+        </div>
+
+        <div class="summary">
           <!-- --- إضافة ملخص العهدة --- -->
           <div class="summary-item">
             <h3>${t('totalCustodyGiven')}</h3>
@@ -520,6 +572,22 @@ export default function Dashboard() {
           <div class="summary-item">
             <h3>${t('totalCustodyRemaining')}</h3>
             <p class="custody">${Number(kpis.totalCustodyRemaining.toFixed(2))} ر.س</p>
+          </div>
+        </div>
+
+        <div class="summary">
+          <!-- --- إضافة ملخص السلف --- -->
+          <div class="summary-item">
+            <h3>${t('totalAdvances')}</h3>
+            <p class="expense" style="color: #4f46e5;">${Number(kpis.totalAdvances.toFixed(2))} ر.س</p>
+          </div>
+          <div class="summary-item">
+            <h3>${t('totalRepayments')}</h3>
+            <p class="income" style="color: #0d9488;">${Number(kpis.totalRepayments.toFixed(2))} ر.س</p>
+          </div>
+          <div class="summary-item">
+            <h3>${t('outstandingAdvances')}</h3>
+            <p class="expense" style="color: #e11d48;">${Number(kpis.outstandingAdvances.toFixed(2))} ر.س</p>
           </div>
         </div>
 
@@ -541,9 +609,9 @@ export default function Dashboard() {
               <tr>
                 <td>${tx.formattedProperty}</td> <!-- --- استخدام الاسم المنسق --- -->
                 <td>${tx.description}</td>
-                <td class="${tx.type === 'income' ? 'income' : 'expense'}">${Number(tx.amount).toFixed(2)} ر.س</td>
+                <td class="${tx.type === 'income' || tx.type === 'salary_advance_repayment' ? 'income' : 'expense'}">${Number(tx.amount).toFixed(2)} ر.س</td>
                 <td>${format(new Date(tx.date), 'dd/MM/yyyy')}</td>
-                <td>${tx.type === 'income' ? t('income') : t('expense')}</td>
+                <td>${t(tx.type)}</td>
                 <td>
                   ${tx.source_type === 'custody'
               ? 'العهدة'
@@ -600,6 +668,9 @@ export default function Dashboard() {
       case 'totalCustodyGiven': return 'border-l-4 border-yellow-500'
       case 'totalCustodyExpenses': return 'border-l-4 border-orange-500'
       case 'totalCustodyRemaining': return 'border-l-4 border-amber-500'
+      case 'totalAdvances': return 'border-l-4 border-indigo-500'
+      case 'totalRepayments': return 'border-l-4 border-teal-500'
+      case 'outstandingAdvances': return 'border-l-4 border-rose-500'
       default: return 'border-l-4 border-gray-500'
     }
   }
@@ -741,23 +812,27 @@ export default function Dashboard() {
           </div>
 
           {dateRange === 'custom' && (
-            <div className="flex flex-wrap gap-2">
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">{t('startDate')}</Label>
+            <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-gray-800 p-2 px-3 rounded-md border shadow-sm mt-2 md:mt-0">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                  {t('startDate') || 'من'}
+                </Label>
                 <Input
                   type="date"
                   value={customStartDate}
                   onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="w-40"
+                  className="w-[140px] h-9"
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">{t('endDate')}</Label>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                  {t('endDate') || 'إلى'}
+                </Label>
                 <Input
                   type="date"
                   value={customEndDate}
                   onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="w-40"
+                  className="w-[140px] h-9"
                 />
               </div>
             </div>
@@ -803,11 +878,20 @@ export default function Dashboard() {
             <CardContent>
               <div className="text-2xl font-bold">{kpis.totalIncome.toFixed(2)} <span className="text-sm text-muted-foreground">ر.س</span></div>
               <div className="flex items-center mt-1">
-                {getChangeIcon(kpis.incomeChange)}
-                <span className={`text-xs ml-1 ${getChangeColor(kpis.incomeChange)}`}>
-                  {kpis.incomeChange > 0 ? '+' : ''}{kpis.incomeChange}%
-                </span>
-                <span className="text-xs text-muted-foreground ml-1">{t('vsLastPeriod')}</span>
+                {(kpis.incomeChange === null || kpis.incomeChange === undefined || isNaN(kpis.incomeChange)) ? (
+                  <span className="text-xs font-semibold text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">{isRTL ? 'لا توجد بيانات مقارنة كافية' : 'Insufficient comparison data'}</span>
+                ) : (
+                  <div
+                    title={`${isRTL ? 'الحالي' : 'Current'}: ${kpis.totalIncome.toFixed(2)}\n${isRTL ? 'السابق' : 'Previous'}: ${kpis.prevTotalIncome.toFixed(2)}\nFormula: ((${kpis.totalIncome.toFixed(2)} - ${kpis.prevTotalIncome.toFixed(2)}) / ${kpis.prevTotalIncome.toFixed(2)}) * 100`}
+                    className="flex items-center cursor-help"
+                  >
+                    {getChangeIcon(kpis.incomeChange)}
+                    <span className={`text-xs font-bold ml-1 rtl:ml-0 rtl:mr-1 ${getChangeColor(kpis.incomeChange)}`}>
+                      {kpis.incomeChange > 0 ? '+' : ''}{Number(kpis.incomeChange).toFixed(1)}%
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1 rtl:ml-0 rtl:mr-1">{t('vsLastPeriod') || 'عن الفترة السابقة'}</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -827,11 +911,20 @@ export default function Dashboard() {
             <CardContent>
               <div className="text-2xl font-bold">{kpis.totalExpenses.toFixed(2)} <span className="text-sm text-muted-foreground">ر.س</span></div>
               <div className="flex items-center mt-1">
-                {getChangeIcon(kpis.expensesChange)}
-                <span className={`text-xs ml-1 ${getChangeColor(kpis.expensesChange)}`}>
-                  {kpis.expensesChange > 0 ? '+' : ''}{kpis.expensesChange}%
-                </span>
-                <span className="text-xs text-muted-foreground ml-1">{t('vsLastPeriod')}</span>
+                {(kpis.expensesChange === null || kpis.expensesChange === undefined || isNaN(kpis.expensesChange)) ? (
+                  <span className="text-xs font-semibold text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">{isRTL ? 'لا توجد بيانات مقارنة كافية' : 'Insufficient comparison data'}</span>
+                ) : (
+                  <div
+                    title={`${isRTL ? 'الحالي' : 'Current'}: ${kpis.totalExpenses.toFixed(2)}\n${isRTL ? 'السابق' : 'Previous'}: ${kpis.prevTotalExpenses.toFixed(2)}\nFormula: ((${kpis.totalExpenses.toFixed(2)} - ${kpis.prevTotalExpenses.toFixed(2)}) / ${kpis.prevTotalExpenses.toFixed(2)}) * 100`}
+                    className="flex items-center cursor-help"
+                  >
+                    {getChangeIcon(kpis.expensesChange)}
+                    <span className={`text-xs font-bold ml-1 rtl:ml-0 rtl:mr-1 ${getChangeColor(kpis.expensesChange)}`}>
+                      {kpis.expensesChange > 0 ? '+' : ''}{kpis.expensesChange.toFixed(1)}%
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1 rtl:ml-0 rtl:mr-1">{t('vsLastPeriod') || 'عن الفترة السابقة'}</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -936,6 +1029,58 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </motion.div>
+
+        {/* --- إضافة KPIs للسلف --- */}
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          transition={{ type: "spring", stiffness: 300 }}
+        >
+          <Card className={`${getKpiCardColor('totalAdvances')} hover:shadow-lg transition-all duration-300`}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {t('totalAdvances')}
+              </CardTitle>
+              <DollarSign className="h-5 w-5 text-indigo-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{kpis.totalAdvances.toFixed(2)} <span className="text-sm text-muted-foreground">ر.س</span></div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          transition={{ type: "spring", stiffness: 300 }}
+        >
+          <Card className={`${getKpiCardColor('totalRepayments')} hover:shadow-lg transition-all duration-300`}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {t('totalRepayments')}
+              </CardTitle>
+              <DollarSign className="h-5 w-5 text-teal-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{kpis.totalRepayments.toFixed(2)} <span className="text-sm text-muted-foreground">ر.س</span></div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          transition={{ type: "spring", stiffness: 300 }}
+        >
+          <Card className={`${getKpiCardColor('outstandingAdvances')} hover:shadow-lg transition-all duration-300`}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {t('outstandingAdvances')}
+              </CardTitle>
+              <AlertTriangle className="h-5 w-5 text-rose-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{kpis.outstandingAdvances.toFixed(2)} <span className="text-sm text-muted-foreground">ر.س</span></div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       {/* Charts Section */}
@@ -984,15 +1129,45 @@ export default function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={chartData.byProperty}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value) => [`${value.toFixed(2)} ر.س`, '']}
+              <ResponsiveContainer width="100%" height={380}>
+                <BarChart data={[...chartData.byProperty].sort((a, b) => b.value - a.value)} margin={{ top: 25, right: 10, left: 10, bottom: 80 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.15} />
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 13, fill: '#1f2937', fontWeight: 600 }}
+                    angle={-45}
+                    textAnchor="end"
+                    interval={0}
+                    tickMargin={12}
                   />
-                  <Bar dataKey="value" fill="#3b82f6" name={t('income')} />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 12, fill: '#4b5563', fontWeight: 500 }}
+                    tickFormatter={(val) => Number(val).toLocaleString('ar-SA')}
+                    width={80}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+                    formatter={(value) => [`${value.toFixed(2)} ر.س`, t('income')]}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <defs>
+                    <linearGradient id="colorIncomeV" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity={0.9} />
+                      <stop offset="100%" stopColor="#60a5fa" stopOpacity={1} />
+                    </linearGradient>
+                  </defs>
+                  <Bar dataKey="value" fill="url(#colorIncomeV)" radius={[4, 4, 0, 0]} maxBarSize={50}>
+                    <LabelList
+                      dataKey="value"
+                      position="top"
+                      formatter={(val) => Number(val).toLocaleString('ar-SA')}
+                      style={{ fontSize: '12px', fill: '#111827', fontWeight: 700 }}
+                    />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -1013,29 +1188,62 @@ export default function Dashboard() {
                 {t('expensesByCategory')}
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex justify-center">
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={chartData.byCategory}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={true}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {chartData.byCategory.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value) => [`${value.toFixed(2)} ر.س`, '']}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+            <CardContent>
+              <div className="space-y-6 mt-2">
+                {/* Donut Chart */}
+                {chartData.byCategory.length > 0 && !chartData.byCategory.every(c => c.value === 0) && (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={chartData.byCategory}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {chartData.byCategory.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => [`${value.toFixed(2)} ر.س`, '']}
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+
+                {/* Categories List */}
+                <div className="space-y-4">
+                  {[...chartData.byCategory].sort((a, b) => b.value - a.value).map((item, index) => {
+                    const percentage = kpis.totalExpenses > 0 ? ((item.value / kpis.totalExpenses) * 100) : 0;
+                    return (
+                      <div key={item.name} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                            <span className="font-semibold text-gray-700 dark:text-gray-300">{item.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900 dark:text-gray-100">{item.value.toFixed(2)} <span className="text-[10px] text-muted-foreground mr-0.5">ر.س</span></span>
+                            <span className="text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-md">
+                              {percentage.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {chartData.byCategory.every(c => c.value === 0) && (
+                  <div className="text-center text-muted-foreground py-10 flex flex-col items-center justify-center gap-2">
+                    <PieChartIcon className="h-8 w-8 text-gray-300 dark:text-gray-700" />
+                    <span>{t('noData') || 'لا توجد مصروفات مسجلة لهذه الفترة'}</span>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </motion.div>

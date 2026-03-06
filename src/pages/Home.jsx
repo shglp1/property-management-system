@@ -57,10 +57,14 @@ export default function Home() {
         .select('type, amount, date')
         .gte('date', today)
 
-      let balance = 0
+      let balance = 0;
       transactions?.forEach((t) => {
-        balance += t.type === 'income' ? Number(t.amount) : -Number(t.amount)
-      })
+        if (t.type === 'income' || t.type === 'salary_advance_repayment') {
+          balance += Number(t.amount) || 0;
+        } else if (t.type === 'expense' || t.type === 'salary_advance') {
+          balance -= Number(t.amount) || 0;
+        }
+      });
 
       // عدد الممتلكات
       const { count: propertiesCount } = await supabase

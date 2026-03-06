@@ -411,6 +411,13 @@ export default function CustodySystem() {
             if (selectedFile) {
                 const file = selectedFile;
 
+                const allowedExtensions = /\.(jpg|jpeg|png|pdf|docx)$/i;
+                if (!file.name.match(allowedExtensions)) {
+                    toast.error("صيغة الملف غير مدعومة. المسموح: JPG, PNG, PDF, DOCX");
+                    setLoading(false);
+                    return;
+                }
+
                 const ext = file.name.split(".").pop();
                 const fileName = `${user.id}_${Date.now()}.${ext}`;
 
@@ -853,6 +860,7 @@ export default function CustodySystem() {
                                                 <Input
                                                     id="attachment"
                                                     type="file"
+                                                    accept=".jpg,.jpeg,.png,.docx,.pdf,image/jpeg,image/png,application/pdf"
                                                     onChange={(e) => setSelectedFile(e.target.files[0])}
                                                 />
                                             </div>

@@ -134,6 +134,23 @@ const resources = {
       pendingUnits: "الوحدات قيد الانتظار",
       currency: "ر.س",
 
+      // Payment Schedule Translations
+      paymentSchedule: 'جدولة الدفعات',
+      generateSchedule: 'توليد الجدولة',
+      generateScheduleNow: 'توليد الجدولة الآن',
+      noScheduleFound: 'لا توجد دفعات مجدولة',
+      scheduleEmptyDesc: 'قم بتوليد الجدولة الزمنية تلقائياً بناءً على تاريخ بداية ونهاية العقد للإيجار الشهري.',
+      month: 'الشهر',
+      dueDate: 'تاريخ الاستحقاق',
+      expectedAmount: 'المبلغ المستحق',
+      paidAmount: 'المبلغ المدفوع',
+      unpaid: 'غير مدفوع',
+      partialPayment: 'مدفوع جزئياً',
+      missingDatesOrRent: 'يجب اكتمال بيانات وتواريخ العقد لتوليد الجدولة',
+      invalidDates: 'تاريخ النهاية يجب أن يكون بعد البداية',
+      noDataForYear: 'لا توجد دفعات مسجلة لهذا العام.',
+      monthly: 'شهرياً',
+
 
 
 
@@ -245,6 +262,8 @@ const resources = {
       date: 'التاريخ',
       income: 'دخل',
       expense: 'مصروف',
+      salary_advance: 'سلفة',
+      salary_advance_repayment: 'تسديد سلفة',
       addTransaction: 'إضافة معاملة',
       editTransaction: 'تعديل معاملة',
       noTransactionsFound: 'لم يتم العثور على معاملات',
@@ -261,6 +280,8 @@ const resources = {
       all: "الكل",
       income: "الدخل",
       expense: "المصروفات",
+      salary_advance: 'سلفة',
+      salary_advance_repayment: 'تسديد سلفة',
       addTransaction: "إضافة معاملة",
       editTransaction: "تعديل المعاملة",
       type: "النوع",
@@ -598,6 +619,9 @@ const resources = {
       totalCustodyGiven: " إجمالي العهد المعطاة حاليًا ",
       totalCustodyExpenses: "إجمالي مصروفات العهد",
       totalCustodyRemaining: "إجمالي الرصيد المتبقي للعهد",
+      totalAdvances: "إجمالي السلف المقدمة",
+      totalRepayments: "إجمالي السلف المستردة",
+      outstandingAdvances: "السلف المتبقية القائمة",
 
 
 
@@ -788,6 +812,9 @@ const resources = {
       overdueUnits: "Overdue Units",
       pendingUnits: "Pending Units",
       currency: "SAR",
+      totalAdvances: "Total Advances Given",
+      totalRepayments: "Total Repayments",
+      outstandingAdvances: "Outstanding Advances",
 
       //notification
       propertyAddedTitle: "Property added",

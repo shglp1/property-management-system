@@ -219,8 +219,16 @@ export default function EmployeeDashboard() {
       }
 
       let attachmentPath = null;
-      if (formData.attachment || selectedFile) {
-        const file = formData.attachment || selectedFile;
+      if (formData.attachment) {
+        const file = formData.attachment;
+
+        const allowedExtensions = /\.(jpg|jpeg|png|pdf|docx)$/i;
+        if (!file.name.match(allowedExtensions)) {
+          toast.error("صيغة الملف غير مدعومة. المسموح: JPG, PNG, PDF, DOCX");
+          setLoading(false);
+          return;
+        }
+
         const ext = file.name.split(".").pop();
         const fileName = `${user.id}_${Date.now()}.${ext}`;
 
@@ -613,6 +621,7 @@ export default function EmployeeDashboard() {
               <Label>{t("attachment")}</Label>
               <Input
                 type="file"
+                accept=".jpg,.jpeg,.png,.docx,.pdf,image/jpeg,image/png,application/pdf"
                 onChange={(e) =>
                   setFormData({
                     ...formData,
