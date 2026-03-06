@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Building2, Key, Plus, Edit, Trash2, CheckCircle, XCircle, AlertTriangle, Calendar, User, FileText, Phone, DollarSign, MapPin, Users, Download, Eye, ChevronRight, ChevronLeft, CalendarDays, Clock } from 'lucide-react';
-import { format, parseISO, differenceInMonths, addMonths } from 'date-fns';
+import { format, parseISO, differenceInDays, addMonths } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 
@@ -263,7 +263,7 @@ export default function Rentals() {
       if (!editingRental && savedRental.start_date && savedRental.end_date && savedRental.monthly_rent > 0) {
         const start = parseISO(savedRental.start_date);
         const end = parseISO(savedRental.end_date);
-        const months = differenceInMonths(end, start);
+        const months = Math.ceil(differenceInDays(end, start) / 30);
         if (months > 0) {
           const scheduleInputs = [];
           for (let i = 0; i < months; i++) {
@@ -325,7 +325,7 @@ export default function Rentals() {
     }
     const start = parseISO(scheduleRental.start_date);
     const end = parseISO(scheduleRental.end_date);
-    const months = differenceInMonths(end, start);
+    const months = Math.ceil(differenceInDays(end, start) / 30);
     if (months <= 0) {
       alert(t('invalidDates') || 'تاريخ النهاية يجب أن يكون بعد البداية');
       return;
